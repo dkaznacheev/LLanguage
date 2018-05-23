@@ -4,21 +4,7 @@ import ArithParser
 import Data.Char
 import Control.Monad
 import Control.Applicative
-
-data LexToken =   KEYW_IF 
-                | KEYW_ELSE 
-                | KEYW_THEN 
-                | KEYW_WHILE 
-                | KEYW_DO 
-                | KEYW_READ
-                | KEYW_WRITE
-                | Liter String
-                | LNum Float 
-                | Op Oper 
-                | Sep Separ deriving (Show, Eq)               
-                
-data Oper = Oplus | Ominus | Omul | Odiv | Omod | Oeq | One | Ogt | Oge | Olt | Ole | Oand | Oor deriving (Show, Eq)
-data Separ = Bracket_L | Bracket_R | Comma | Semicolon deriving (Show, Eq)
+import TokenParser
 
 kw_keyw :: String -> LexToken -> Parser LexToken
 kw_keyw s kw = do
@@ -30,9 +16,9 @@ kw_else = kw_keyw "else" KEYW_ELSE
 kw_then = kw_keyw "then" KEYW_THEN
 kw_while = kw_keyw "while" KEYW_WHILE
 kw_if = kw_keyw "if" KEYW_IF
+kw_elif = kw_keyw "elif" KEYW_ELIF
 kw_read = kw_keyw "read" KEYW_READ
 kw_write = kw_keyw "write" KEYW_WRITE
-
 
 ident :: Parser LexToken
 ident = do
@@ -95,6 +81,18 @@ olt = oper "<" Olt
 ole = oper "<=" Ole 
 oand = oper "&&" Oand
 oor = oper "||" Oor
+oas = oper ":=" Oas
+
+aoper :: String -> AOper -> Parser LexToken 
+aoper s t = do 
+    reserved s 
+    return $ AOp t
+    
+oaplus = aoper "+=" OAplus
+oaminus = aoper "-=" OAminus 
+oamul = aoper "*=" OAmul 
+oadiv = aoper "/=" OAdiv 
+oamod = aoper "%=" OAmod
 
 sep :: String -> Separ -> Parser LexToken 
 sep s t = do 
@@ -103,20 +101,25 @@ sep s t = do
 
 sbrL = sep "(" Bracket_L
 sbrR = sep ")" Bracket_R
+sbrCL = sep "{" CBracket_L
+sbrCR = sep "}" CBracket_R
 scomma = sep "," Comma
 ssemicolon = sep ";" Semicolon
 
 lex_sep :: Parser LexToken
-lex_sep = sbrL <|> sbrR <|> scomma <|> ssemicolon
+lex_sep = sbrL <|> sbrR <|> sbrCL <|> sbrCR <|> scomma <|> ssemicolon
 
 lex_kw :: Parser LexToken
-lex_kw = kw_if <|> kw_else <|> kw_then <|> kw_do <|> kw_while <|> kw_read <|> kw_write
+lex_kw = kw_if <|> kw_else <|> kw_then <|> kw_do <|> kw_while <|> kw_read <|> kw_write <|> kw_elif
 
 lex_op :: Parser LexToken
-lex_op = oplus <|> ominus <|> omul <|> odiv <|> omod <|> oeq <|> one <|> ogt <|> oge <|> olt <|> ole <|> oand <|> oor
+lex_op = oplus <|> ominus <|> omul <|> odiv <|> omod <|> oeq <|> one <|> ogt <|> oge <|> olt <|> ole <|> oand <|> oor <|> oas
+
+lex_aop :: Parser LexToken
+lex_aop = oaplus <|> oaminus <|> oamul <|> oadiv <|> oamod 
 
 lextok :: Parser LexToken
-lextok = whitespace >> (lex_kw <|> ident <|> lex_op <|> floatN <|> lex_sep)
+lextok = whitespace >> (lex_kw <|> ident <|> lex_aop <|> lex_op <|> floatN <|> lex_sep)
 
 llex :: Parser [LexToken]
 llex = do 
@@ -126,3 +129,44 @@ llex = do
     
 runLex :: String -> [LexToken]
 runLex s = runParser llex s
+
+buildTree :: String -> Program
+buildTree s = (t_runParser parseProgram) ((runParser llex) s)
+
+sp n = (replicate n '.')
+
+printProgram :: Program -> String
+printProgram (Program fundefs body) = (printDefs fundefs) ++ (printBody body 0);
+
+printDefs :: [FunDef] -> String
+printDefs [] = ""
+printDefs (x:xs) = printDef x ++ "\n" ++ (printDefs xs)
+
+printDef :: FunDef -> String
+printDef (FunDef name args body) = "def " ++ (show name) ++ " " ++ (show args) ++ " {\n" ++ (printBody body 1) ++ "\n}\n"
+
+printBody :: Body -> Int -> String
+printBody (Body l) n = (sp n) ++ "Body:\n" ++ (printCommands l n)
+--ComCall FunCall | ComAs Ident Expr | ComWrite Expr | ComRead Ident | ComWhile Expr Body | ComIf Expr Body Body
+printCommands :: [Command] -> Int -> String
+printCommands [] n = ""
+printCommands (x:xs) n = (printCommand x (n + 1)) ++ "\n" ++ (printCommands xs n)
+
+printCommand :: Command -> Int -> String
+printCommand (ComCall call) n = (sp n) ++ "CommandCall \n" ++ (printFunCall call (n + 1))
+printCommand (ComAs id ex) n = (sp n) ++ "CommandAssign \n" ++ (sp (n + 1)) ++ (show id) ++ "\n" ++ (printExpr ex (n + 1))
+printCommand (ComWrite ex) n = (sp n) ++ "Write \n" ++ (printExpr ex (n + 1))
+printCommand (ComRead id) n = (sp n) ++ "Read \n" ++ (sp n) ++ (show id)
+printCommand (ComIf ex b1 b2) n = (sp n) ++ "If \n" ++ (printExpr ex (n + 1)) ++ "\n" ++ (sp n) ++ "Then\n" ++ (printBody b1 (n + 1)) ++ (sp n) ++ "Else\n" ++ (printBody b1 (n + 1)) ++ (sp n)
+printCommand (ComWhile ex b1) n = (sp n) ++ "While \n" ++ (printExpr ex (n + 1)) ++ "\n" ++ (sp n) ++ "Do\n" ++ (printBody b1 (n + 1))
+
+printFunCall (FunCall id args) n = (sp n) ++ "Call:\n" ++ (sp (n + 1)) ++ (show id) ++ "\n" ++ (sp (n + 1)) ++ "Args:\n" ++ (printArgs args (n+2))
+printArgs (Args l) n = printExprs l n
+
+printExprs [] n = ""
+printExprs (x:xs) n = (printExpr x n) ++ "\n" ++ (printExprs xs n)
+
+printExpr (ExprCall call) n = (sp n) ++ "Expr: \n" ++ (printFunCall call (n+1))
+printExpr (ExprId id) n = (sp n) ++ "Expr: \n" ++ (sp (n + 1)) ++ (show id)
+printExpr (ExprNum num) n = (sp n) ++ "Expr: \n" ++ (sp (n + 1)) ++ (show num)
+printExpr (ExprOp op e1 e2) n = (sp n) ++ "Expr: \n" ++ (sp (n + 1)) ++ "Op:" ++ (show op) ++ "\n" ++ (sp (n + 1)) ++ "Arg1:\n" ++ (printExpr e1 (n+1)) ++ "\n" ++ (sp (n + 2)) ++ "Arg2:\n"++ (printExpr e2 (n+2))

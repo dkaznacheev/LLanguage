@@ -7,6 +7,8 @@ fi
 if [ "$1" == "test" ]; then
     ghc test.hs
     ./test
-else
+elif [ "$1" == "lexer" ]; then
     ghc lexer.hs
+else
+    ghc parser.hs
 fi

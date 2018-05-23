@@ -8,5 +8,5 @@ main :: IO ()
 main = do
         [f] <- getArgs
         s <- readFile f
-        let ex = runLex s
-        putStrLn $ show ex
+        let pr = buildTree s
+        putStrLn $ printProgram pr
